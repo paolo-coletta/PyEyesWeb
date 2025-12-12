@@ -103,6 +103,58 @@ def process_wrist(frame, original_frame, width, height, elbow, wrist, pinky, ind
                 cv2.putText(frame, f'{smoothed_angle:.2f} deg', (text_x, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, border_color, 2)
 
+# Function to process and display a frame
+def process_and_display(frame, original_frame, mp_pose, results, height, width, current_frame, frame_count, live, args, left_angle_history, right_angle_history, LEFT_ELBOW_IDX, LEFT_WRIST_IDX, LEFT_PINKY_IDX, LEFT_INDEX_IDX, LEFT_SHOULDER_IDX, RIGHT_ELBOW_IDX, RIGHT_WRIST_IDX, RIGHT_PINKY_IDX, RIGHT_INDEX_IDX, RIGHT_SHOULDER_IDX):
+    if not live:
+        percentage = (current_frame / frame_count) * 100
+        cv2.putText(frame, f'Video Progress: {percentage:.2f} %', (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+    # Add legend in top right
+    legend_lines = [
+        "p: play/pause",
+        "f: frame fwd",
+        "b: frame back", 
+        "q: quit"
+    ]
+    font_scale = 0.6
+    font_thickness = 1
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    color = (0, 0, 0)
+    line_height = 18
+    start_y = 30
+    start_x = width - 160
+    for i, line in enumerate(legend_lines):
+        y = start_y + i * line_height
+        cv2.putText(frame, line, (start_x, y), font, font_scale, color, font_thickness)
+
+    if results.pose_landmarks:
+        left_elbow = extract_coordinates(results, LEFT_ELBOW_IDX)
+        left_wrist = extract_coordinates(results, LEFT_WRIST_IDX)
+        left_pinky = extract_coordinates(results, LEFT_PINKY_IDX)
+        left_index = extract_coordinates(results, LEFT_INDEX_IDX)
+        left_shoulder = extract_coordinates(results, LEFT_SHOULDER_IDX)
+
+        right_elbow = extract_coordinates(results, RIGHT_ELBOW_IDX)
+        right_wrist = extract_coordinates(results, RIGHT_WRIST_IDX)
+        right_pinky = extract_coordinates(results, RIGHT_PINKY_IDX)
+        right_index = extract_coordinates(results, RIGHT_INDEX_IDX)
+        right_shoulder = extract_coordinates(results, RIGHT_SHOULDER_IDX)
+
+        process_wrist(frame, original_frame, width, height, left_elbow, left_wrist, left_pinky, left_index, left_shoulder, left_angle_history, side="left" if not live else "right")
+        process_wrist(frame, original_frame, width, height, right_elbow, right_wrist, right_pinky, right_index, right_shoulder, right_angle_history, side="right" if not live else "left")
+
+        if args.draw_skeleton:
+            mp_drawing = mp.solutions.drawing_utils
+            mp_drawing_styles = mp.solutions.drawing_styles
+            mp_drawing.draw_landmarks(
+                frame,
+                results.pose_landmarks,
+                mp_pose.POSE_CONNECTIONS,
+                landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
+
+    cv2.imshow('MediaPipe Pose', frame)
+
 # Main function
 def main():
     parser = argparse.ArgumentParser(description="Process a video file to analyze wrist movement.")
@@ -126,54 +178,66 @@ def main():
     left_angle_history = deque(maxlen=5)
     right_angle_history = deque(maxlen=5)
 
+    # Read and process first frame
+    ret, frame = cap.read()
+    if not ret:
+        print("Failed to read first frame")
+        return
+
+    original_frame = frame.copy()
+    if live:
+        frame = cv2.flip(frame, 1)
+    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = pose.process(image)
+    height, width, _ = image.shape
+    current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) if not live else 0
+    process_and_display(frame, original_frame, mp_pose, results, height, width, current_frame, frame_count, live, args, left_angle_history, right_angle_history, LEFT_ELBOW_IDX, LEFT_WRIST_IDX, LEFT_PINKY_IDX, LEFT_INDEX_IDX, LEFT_SHOULDER_IDX, RIGHT_ELBOW_IDX, RIGHT_WRIST_IDX, RIGHT_PINKY_IDX, RIGHT_INDEX_IDX, RIGHT_SHOULDER_IDX)
+
+    is_playing = True
+
     try:
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to grab frame")
+        while True:
+            key = cv2.waitKey(0 if not is_playing else 1) & 0xFF
+            if key == ord('q'):
                 break
+            elif key == ord('p'):
+                is_playing = not is_playing
+            elif key == ord('f') and not is_playing and not live:
+                current_pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos + 1)
+                ret, frame = cap.read()
+                if ret:
+                    original_frame = frame.copy()
+                    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    results = pose.process(image)
+                    height, width, _ = image.shape
+                    current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                    process_and_display(frame, original_frame, mp_pose, results, height, width, current_frame, frame_count, live, args, left_angle_history, right_angle_history, LEFT_ELBOW_IDX, LEFT_WRIST_IDX, LEFT_PINKY_IDX, LEFT_INDEX_IDX, LEFT_SHOULDER_IDX, RIGHT_ELBOW_IDX, RIGHT_WRIST_IDX, RIGHT_PINKY_IDX, RIGHT_INDEX_IDX, RIGHT_SHOULDER_IDX)
+            elif key == ord('b') and not is_playing and not live:
+                current_pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                if current_pos > 0:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos - 1)
+                    ret, frame = cap.read()
+                    if ret:
+                        original_frame = frame.copy()
+                        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        results = pose.process(image)
+                        height, width, _ = image.shape
+                        current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                        process_and_display(frame, original_frame, mp_pose, results, height, width, current_frame, frame_count, live, args, left_angle_history, right_angle_history, LEFT_ELBOW_IDX, LEFT_WRIST_IDX, LEFT_PINKY_IDX, LEFT_INDEX_IDX, LEFT_SHOULDER_IDX, RIGHT_ELBOW_IDX, RIGHT_WRIST_IDX, RIGHT_PINKY_IDX, RIGHT_INDEX_IDX, RIGHT_SHOULDER_IDX)
 
-            if live:
-                frame = cv2.flip(frame, 1)  # Mirror the frame for webcam input
-            original_frame = frame.copy()  # Make a copy of the original frame
-            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = pose.process(image)
-            height, width, _ = image.shape
-
-            if not live:
-                current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-                percentage = (current_frame / frame_count) * 100
-                cv2.putText(frame, f'Video Progress: {percentage:.2f} %', (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-            if results.pose_landmarks:
-                left_elbow = extract_coordinates(results, LEFT_ELBOW_IDX)
-                left_wrist = extract_coordinates(results, LEFT_WRIST_IDX)
-                left_pinky = extract_coordinates(results, LEFT_PINKY_IDX)
-                left_index = extract_coordinates(results, LEFT_INDEX_IDX)
-                left_shoulder = extract_coordinates(results, LEFT_SHOULDER_IDX)
-
-                right_elbow = extract_coordinates(results, RIGHT_ELBOW_IDX)
-                right_wrist = extract_coordinates(results, RIGHT_WRIST_IDX)
-                right_pinky = extract_coordinates(results, RIGHT_PINKY_IDX)
-                right_index = extract_coordinates(results, RIGHT_INDEX_IDX)
-                right_shoulder = extract_coordinates(results, RIGHT_SHOULDER_IDX)
-
-                process_wrist(frame, original_frame, width, height, left_elbow, left_wrist, left_pinky, left_index, left_shoulder, left_angle_history, side="left" if not live else "right")
-                process_wrist(frame, original_frame, width, height, right_elbow, right_wrist, right_pinky, right_index, right_shoulder, right_angle_history, side="right" if not live else "left")
-
-                if args.draw_skeleton:
-                    mp_drawing = mp.solutions.drawing_utils
-                    mp_drawing_styles = mp.solutions.drawing_styles
-                    mp_drawing.draw_landmarks(
-                        frame,
-                        results.pose_landmarks,
-                        mp_pose.POSE_CONNECTIONS,
-                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
-
-            cv2.imshow('MediaPipe Pose', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            if is_playing:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                original_frame = frame.copy()
+                if live:
+                    frame = cv2.flip(frame, 1)
+                image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = pose.process(image)
+                height, width, _ = image.shape
+                current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) if not live else 0
+                process_and_display(frame, original_frame, mp_pose, results, height, width, current_frame, frame_count, live, args, left_angle_history, right_angle_history, LEFT_ELBOW_IDX, LEFT_WRIST_IDX, LEFT_PINKY_IDX, LEFT_INDEX_IDX, LEFT_SHOULDER_IDX, RIGHT_ELBOW_IDX, RIGHT_WRIST_IDX, RIGHT_PINKY_IDX, RIGHT_INDEX_IDX, RIGHT_SHOULDER_IDX)
     finally:
         cap.release()
         cv2.destroyAllWindows()
