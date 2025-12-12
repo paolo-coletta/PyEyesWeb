@@ -13,7 +13,6 @@ import numpy as np
 import cv2
 import mediapipe as mp
 from pyeyesweb.analysis_primitives.synchronization import Synchronization
-import dotenv
 
 # Function to extract the y-coordinate of a specified keypoint (e.g., wrist) from the Mediapipe Pose results.
 # The keypoint's visibility is checked to ensure it's sufficiently visible before processing.
@@ -25,7 +24,6 @@ def extract_coordinates(results, keypoint_idx):
     return None  # Return None if the keypoint is not sufficiently visible
 
 def angle_between(v0, v1, v2):
-    """
     # Compute the normal vector of the plane containing v0 and v1
     normal = np.cross(v0, v1)
     normal_u = normal / np.linalg.norm(normal)
@@ -35,10 +33,12 @@ def angle_between(v0, v1, v2):
     angle = np.abs(np.arcsin(np.clip(np.dot(normal_u, v2_u), -1.0, 1.0)))
     return np.degrees(angle)
     """
+    
     v1_u = v1 / np.linalg.norm(v1)
     v2_u = v2 / np.linalg.norm(v2)
     angle = np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
     return np.degrees(angle)
+    """
 
 
 # Function to interpolate color between green and red based on the angle
